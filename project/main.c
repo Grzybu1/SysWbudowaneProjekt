@@ -88,7 +88,7 @@ void drawLetter(short int offsetX, short int offsetY, unsigned char litera)
 
 void I2C_enable()
 {
-	//PIN_ConfigureI2C0Pins(0, 0);
+	//(0, 0);
 	LPC_PINCON->PINSEL1 &= ~((0x03<<22)|(0x03<<24));
 	LPC_PINCON->PINSEL1 |= ((0x01<<22)|(0x01<<24));	
 	
