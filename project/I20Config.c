@@ -1,12 +1,16 @@
 
-//Tu należy zapisać adres slave'a
-volatile unsigned char slaveAdr; 
 
 //Tu będziemy dostawać dane
 volatile unsigned char buforRead[20];
 
+//Tu należy zapisać adres slave'a razem z bitem R/W
+volatile unsigned char buforWrite[20];
+
 //Tu wrzucamy ile bajtów danych się spodziewamy
 volatile int maxRead; 
+
+//Tu wrzucamy ile bajtów danych wysyłamy
+volatile int maxWrite;
 
 void I2C_enable()
 {
@@ -37,8 +41,6 @@ void I2C_enable()
 
 void I2C_transmit()
 {
-	//informacje ile już odebraliśmy.
-	int readId = 0;
 
 	//Ustawienie bitu STA -> ustawienie flagi startu
 	LPC_I2C0->I2CONSET = 1<<5;
@@ -52,6 +54,12 @@ void I2C_transmit()
 //Manual strony 468 i 477+
 extern void I2C0_IRQHandler(void)
 {
+	//informacje ile już odebraliśmy.
+	int readId = 0;
+	
+	//informacje ile już wysłaliśmy.
+	int writeId = 0;
+	
 	//W tej zmiennej mamy aktualny status transmisji który należy obsłużyć.
 	unsigned char status = LPC_I2C0->I2STAT;
 
@@ -72,11 +80,77 @@ extern void I2C0_IRQHandler(void)
 		//Wysłaliśmy ponowny sygnał startu,
 		//robimy w zasadzie to co przy 0x08 bo nie chcemy przechodzić do trybu transmisji
 		case 0x10:
-			//zapisujemy adres do wysłania - UWAGA! Adres musi posiadać na końcu bit W/R
+			//zapisujemy adres do wysłania - UWAGA! Adres musi posiadać na końcu bit W/R(w zależności od niego przechodzimy do reciever/transmiter)
 			LPC_I2C0->I2DAT = slaveAdr;
 
 			//Ustawiamy bit AA
 			LPC_I2C0->I2CONSET = 0x04;
+
+			//Czyścimy bit SI
+			LPC_I2C0->I2CONCLR = 0x08;
+		break;
+
+		//wysłano sla+w, otrzymano ACK. Wyślemy 1 bajt.
+		case 0x18:
+			//ładujemy coś do wysłania
+			LPC_I2C0->I2DAT = buforWrite[writeId];
+			
+			//oznaczamy elementjako wysłany
+			writeId++;
+
+			//Ustawiamy bit AA
+			LPC_I2C0->I2CONSET = 0x04;
+
+			//Czyścimy bit SI
+			LPC_I2C0->I2CONCLR = 0x08;
+
+		break;
+
+		//Wysłano SLA + w, otrzymano not ACK. Wysyłamy stop
+		case 0x20:
+			//ustawiamy flagi aa i sto
+			LPC_I2C0->I2CONSET = 0x14;
+
+			//Czyścimy bit SI
+			LPC_I2C0->I2CONCLR = 0x08;
+		break;
+
+		//wysłano bajt, otrzymano ack. Jeśli jestcoś do wysłania to wyśli jeśli nie to stop
+		case 0x28:
+			if((writeId) < maxWrite)
+			{
+				//ustawiamy flagi aa i sto
+				LPC_I2C0->I2CONSET = 0x14;
+			}
+			else
+			{
+				//ładujemy coś do wysłania
+				LPC_I2C0->I2DAT = buforWrite[writeId];
+				
+				//oznaczamy elementjako wysłany
+				writeId++;
+
+				//Ustawiamy bit AA
+				LPC_I2C0->I2CONSET = 0x04;
+			}
+			//Czyścimy bit SI
+			LPC_I2C0->I2CONCLR = 0x08;
+		break;
+
+		//Wysłano dane, otrzymano notACK. wysyłamy stop
+		case 0x30:
+			//ustawiamy flagi aa i sto
+			LPC_I2C0->I2CONSET = 0x14;
+
+			//Czyścimy bit SI
+			LPC_I2C0->I2CONCLR = 0x08;
+		break;
+
+		//stracono arbitraż podczas wysyłania danych lub sla+w. 
+		//Transmitujemy start kiedy magistralawolna
+		case 0x38:
+			//ustawiamy flagi aa i sta
+			LPC_I2C0->I2CONSET = 0x24;
 
 			//Czyścimy bit SI
 			LPC_I2C0->I2CONCLR = 0x08;
