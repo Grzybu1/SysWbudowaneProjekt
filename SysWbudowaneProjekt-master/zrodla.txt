@@ -1,0 +1,10 @@
+///////////////////////////// I2C//////////////////////////
+
+
+https://sites.google.com/site/johnkneenmicrocontrollers/18b-i2c/i2c_lpc1768
+
+
+https://github.com/nikica/i2c-LPC2148
+
+
+https://github.com/Mrjohns42/RSL/tree/master/LPC1768/keil_examples/I2C
