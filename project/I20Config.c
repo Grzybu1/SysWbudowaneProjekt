@@ -93,6 +93,7 @@ extern void I2C0_IRQHandler(void)
 			//Czyścimy bit SI
 			LPC_I2C0->I2CONCLR = 0x08;
 		break;
+
 		//wysłano sla+w, otrzymano ACK. Wyślemy 1 bajt.
 		case 0x18:
 			//ładujemy coś do wysłania
@@ -118,14 +119,12 @@ extern void I2C0_IRQHandler(void)
 			LPC_I2C0->I2CONCLR = 0x08;
 		break;
 
-		//wysłano bajt, otrzymano ack. Jeśli jestcoś do wysłania to wyśli jeśli nie to stop
+		//wysłano bajt, otrzymano ack. Jeśli wysyłany ma być ostatni bajt to sprawdź czy spodziewamy się odczytu.
+		//Jeśli tak to ostatni bajt jest adresem sla + R,
+		//więc powinniśmy wysłać najpierw ponowiony warunek start a dopiero później zawartość ostatniej komórki bufora write.
 		case 0x28:
-			if((writeId) < maxWrite)
-			{
-				//ustawiamy flagi aa i sto
-				LPC_I2C0->I2CONSET = 0x14;
-			}
-			else
+			//jeśli kolejny bajt nie będzie ostatnim to:
+			if((writeId + 1) < maxWrite)
 			{
 				//ładujemy coś do wysłania
 				LPC_I2C0->I2DAT = buforWrite[writeId];
@@ -135,6 +134,36 @@ extern void I2C0_IRQHandler(void)
 
 				//Ustawiamy bit AA
 				LPC_I2C0->I2CONSET = 0x04;
+			}
+			else
+			{
+				//zostało coś do odczytu
+				if(readId < maxRead)
+				{
+					//Ustaw flagę startu -> przejdzie do stanu 10 żeby wysłać ostatni element bufor write czyli sla + r
+					LPC_I2C0->I2CONSET = 1<<5;
+				}
+				else
+				{
+					//sprawdzamy czy mamy coś jescze do wysłania. Jeśli nie to trzeba ustawić flagę stop.
+					//Jeśli tak to nie jest to adres a raczej ostatni bajt konfiguracyjny przeznaczony do wysłania.
+					if(writeId < maxWrite)
+					{
+						//ładujemy coś do wysłania
+						LPC_I2C0->I2DAT = buforWrite[writeId];
+				
+						//oznaczamy elementjako wysłany
+						writeId++;
+
+						//Ustawiamy bit AA
+						LPC_I2C0->I2CONSET = 0x04;
+					}
+					else
+					{
+						//ustawiamy flagi aa i sto
+						LPC_I2C0->I2CONSET = 0x14;
+					}
+				}
 			}
 			//Czyścimy bit SI
 			LPC_I2C0->I2CONCLR = 0x08;
