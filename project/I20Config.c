@@ -41,6 +41,9 @@ void I2C_enable()
 
 void I2C_transmit()
 {
+	//informacje ile już odebraliśmy.
+	int readId = 0;
+	int writeId = 0;
 
 	//Ustawienie bitu STA -> ustawienie flagi startu
 	LPC_I2C0->I2CONSET = 1<<5;
@@ -54,12 +57,6 @@ void I2C_transmit()
 //Manual strony 468 i 477+
 extern void I2C0_IRQHandler(void)
 {
-	//informacje ile już odebraliśmy.
-	int readId = 0;
-	
-	//informacje ile już wysłaliśmy.
-	int writeId = 0;
-	
 	//W tej zmiennej mamy aktualny status transmisji który należy obsłużyć.
 	unsigned char status = LPC_I2C0->I2STAT;
 
@@ -68,7 +65,10 @@ extern void I2C0_IRQHandler(void)
 		//Wysłano pojedynczy sygnał startu i otrzymano ACK. Po tym idziemy do 0x40 lub 0x48
 		case 0x08:
 			//zapisujemy adres do wysłania - UWAGA! Adres musi posiadać na końcu bit W/R
-			LPC_I2C0->I2DAT = slaveAdr;
+			LPC_I2C0->I2DAT = buforWrite[writeId];
+
+			//zwiększamy indeks wysyłania
+			writeId++;
 
 			//Ustawiamy bit AA
 			LPC_I2C0->I2CONSET = 0x04;
@@ -78,10 +78,14 @@ extern void I2C0_IRQHandler(void)
 		break;
 
 		//Wysłaliśmy ponowny sygnał startu,
-		//robimy w zasadzie to co przy 0x08 bo nie chcemy przechodzić do trybu transmisji
+		//robimy w zasadzie to co przy 0x08. Jeśli jesteśmy w trybie reciever i wrzucimy 
+		//adres z bitem W to przejdziemy do trybu transmiter i na odwrót
 		case 0x10:
-			//zapisujemy adres do wysłania - UWAGA! Adres musi posiadać na końcu bit W/R(w zależności od niego przechodzimy do reciever/transmiter)
-			LPC_I2C0->I2DAT = slaveAdr;
+			//zapisujemy adres do wysłania - UWAGA! Adres musi posiadać na końcu bit W/R
+			LPC_I2C0->I2DAT = buforWrite[writeId];
+
+			//zwiększamy indeks wysyłania
+			writeId++;
 
 			//Ustawiamy bit AA
 			LPC_I2C0->I2CONSET = 0x04;
@@ -89,7 +93,6 @@ extern void I2C0_IRQHandler(void)
 			//Czyścimy bit SI
 			LPC_I2C0->I2CONCLR = 0x08;
 		break;
-
 		//wysłano sla+w, otrzymano ACK. Wyślemy 1 bajt.
 		case 0x18:
 			//ładujemy coś do wysłania
