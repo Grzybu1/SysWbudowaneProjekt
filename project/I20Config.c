@@ -39,6 +39,28 @@ void I2C_enable()
 	LPC_I2C0->I2CONSET = 1<<6;
 }
 
+/*
+* Jeśli chcemy skonfigurować pojedynczy rejestr to do bufor write wrzucamy kolejno:
+* 1) adres sla + w
+* 2) adres rejestru
+* 3) nowa wartość rejestru
+* Max read ustawiamy na 0. Max write na 3.
+*
+* Jeśli chcemy skonfigurować kilka rejestrów zapisujemy do bufor write kolejno:
+* 1) adres sla + w
+* 2) adres rejestru 1
+* 3) nowa wartość rejestru 1
+* 4) adres rejestru 2
+* 5) nowa wartość rejestru 2
+* 			...
+* Max read ustawiamy na 0. max write w zależności od ilości modyfikowanych rejestrów.
+*
+* Jeśli chcemy odczytać rejestr to do bufor write zapisujemy kolejno:
+* 1) adres sla + w
+* 2) adres rejestru który chcemy odczytać
+* 3) adres sla + r
+* Ustawiamy max write na 3, a max read na ilość bajtów których się spodziewamy otrzymać w odpowiedzi.
+*/
 void I2C_transmit()
 {
 	//informacje ile już odebraliśmy.
