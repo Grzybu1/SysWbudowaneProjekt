@@ -10,6 +10,7 @@
 
 volatile uint32_t ticks = 0;	// zmienna do delay
 uint32_t randomTick = 5000;
+double alfaRandom = 1.2435;
 volatile unsigned int I2C_Timeout = 0;
 
 int readId = 0;	
@@ -44,9 +45,11 @@ short int currentTail = 0;
 void SysTick_Handler(void)
 {
 	++ticks;
-	randomTick+=6961;
-	if(randomTick > 30001)
-		randomTick = randomTick%30000;
+	for(int i = 0; i < randomTick%20; i++){
+		randomTick = (int)((double)randomTick * alfaRandom);
+	}
+	if(randomTick > 31600100)
+		randomTick = randomTick/(alfaRandom*0.0000002);
 }
 
 void delayMS(int ms) //miliseconds
@@ -539,8 +542,8 @@ void generateFood()
   short int generated = 0;
   while(generated == 0)
   {
-    int indexX = ((float)randomTick/30001)*32;
-		int indexY = ((float)randomTick/30001)*20;
+    int indexX = ((float)randomTick/31600100.0)*32;
+		int indexY = ((float)randomTick/31600100.0)*20;
 		
     if((coloredTab[32*indexY+indexX] != 'S') && (coloredTab[32*indexY+indexX] != 'T'))
     {
