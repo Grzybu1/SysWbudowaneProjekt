@@ -4,11 +4,12 @@
 #include "Board_Buttons.h"
 #include "Board_Joystick.h"
 #include "GPIO_LPC17xx.h"
+#include "eeprom.h"
 #include "stdio.h"
 //#include "mbed.h"
 
 volatile uint32_t ticks = 0;	// zmienna do delay
-uint32_t randomTick =5000;
+uint32_t randomTick = 5000;
 volatile unsigned int I2C_Timeout = 0;
 
 int readId = 0;	
@@ -17,14 +18,15 @@ int writeId = 0;
 volatile unsigned char buforRead[20];
 //Tu nalezy zapisac adres slave'a razem z bitem R/W
 volatile unsigned char buforWrite[20];
-//Tu wrzucamy ile bajtów danych sie spodziewamy
+//Tu wrzucamy ile bajtï¿½w danych sie spodziewamy
 volatile int maxRead; 
-//Tu wrzucamy ile bajtów danych wysylamy
+//Tu wrzucamy ile bajtï¿½w danych wysylamy
 volatile int maxWrite;
 
 short int side = 10;
-short int snakeSize = 1;
-short int direction = 2;
+uint8_t snakeSize = 1;
+uint8_t bestScores[10] = {0};
+
 short int xTab[32] = {0};
 short int yTab[20] = {0};
 short int headTail[2][2];
@@ -35,6 +37,9 @@ char coloredTab[640];
   1   2
     3
 */
+short int tailDirection[1000] = {2};
+short int direction = 2;
+short int currentTail = 0;
 
 void SysTick_Handler(void)
 {
@@ -116,11 +121,11 @@ void I2C_enable()
 	//PCLKSEL0 = 0; 
 
 
-	//Konfiguracja pinów na SDA0 i SCL0(s.129 dokumentacji)
+	//Konfiguracja pinï¿½w na SDA0 i SCL0(s.129 dokumentacji)
 	LPC_PINCON->PINSEL1 |= ((0x01<<22)|(0x01<<24)); 
 
 
-	//Domyslne - ustawienie pinów w tryb normalny
+	//Domyslne - ustawienie pinï¿½w w tryb normalny
 	//LPC_PINCON->I2CPADCFG |= 0<<0 | 0<<1;
 
 	//Czyscimy wszystkie flagi
@@ -140,20 +145,20 @@ void I2C_enable()
 * 3) nowa wartosc rejestru
 * Max read ustawiamy na 0. Max write na 3.
 *
-* Jesli chcemy skonfigurowac kilka rejestrów zapisujemy do bufor write kolejno:
+* Jesli chcemy skonfigurowac kilka rejestrï¿½w zapisujemy do bufor write kolejno:
 * 1) adres sla + w
 * 2) adres rejestru 1
 * 3) nowa wartosc rejestru 1
 * 4) adres rejestru 2
 * 5) nowa wartosc rejestru 2
 * 			...
-* Max read ustawiamy na 0. max write w zaleznosci od ilosci modyfikowanych rejestrów.
+* Max read ustawiamy na 0. max write w zaleznosci od ilosci modyfikowanych rejestrï¿½w.
 *
 * Jesli chcemy odczytac rejestr to do bufor write zapisujemy kolejno:
 * 1) adres sla + w
-* 2) adres rejestru który chcemy odczytac
+* 2) adres rejestru ktï¿½ry chcemy odczytac
 * 3) adres sla + r
-* Ustawiamy max write na 3, a max read na ilosc bajtów których sie spodziewamy otrzymac w odpowiedzi.
+* Ustawiamy max write na 3, a max read na ilosc bajtï¿½w ktï¿½rych sie spodziewamy otrzymac w odpowiedzi.
 */
 void I2C_transmit()
 {
@@ -173,7 +178,7 @@ void I2C_transmit()
 //Manual strony 468 i 477+
 extern void I2C0_IRQHandler(void)
 {
-	//W tej zmiennej mamy aktualny status transmisji który nalezy obsluzyc.
+	//W tej zmiennej mamy aktualny status transmisji ktï¿½ry nalezy obsluzyc.
 	unsigned char status = LPC_I2C0->I2STAT;
 
 	switch(status)
@@ -195,7 +200,7 @@ extern void I2C0_IRQHandler(void)
 
 		//Wyslalismy ponowny sygnal startu,
 		//robimy w zasadzie to co przy 0x08. Jesli jestesmy w trybie reciever i wrzucimy 
-		//adres z bitem W to przejdziemy do trybu transmiter i na odwrót
+		//adres z bitem W to przejdziemy do trybu transmiter i na odwrï¿½t
 		case 0x10:
 			//zapisujemy adres do wyslania - UWAGA! Adres musi posiadac na koncu bit W/R
 			LPC_I2C0->I2DAT = buforWrite[writeId];
@@ -237,7 +242,7 @@ extern void I2C0_IRQHandler(void)
 
 		//wyslano bajt, otrzymano ack. Jesli wysylany ma byc ostatni bajt to sprawdz czy spodziewamy sie odczytu.
 		//Jesli tak to ostatni bajt jest adresem sla + R,
-		//wiec powinnismy wyslac najpierw ponowiony warunek start a dopiero pózniej zawartosc ostatniej komórki bufora write.
+		//wiec powinnismy wyslac najpierw ponowiony warunek start a dopiero pï¿½zniej zawartosc ostatniej komï¿½rki bufora write.
 		case 0x28:
 			//jesli kolejny bajt nie bedzie ostatnim to:
 			if((writeId + 1) < maxWrite)
@@ -364,6 +369,32 @@ extern void I2C0_IRQHandler(void)
 }
 // strona 466 dokumentacja
 
+void readBestScores(){
+	EEPROM_ReadNBytes(100, bestScores, 10);
+}
+
+void bubbleSort(int *tab, int size)
+{
+	for (int i = 0; i < size-1; i++) {
+		for (int j = 0; j < size-i-1; j++) {
+			if (tab[j] > tab[j+1]) { 
+				int temp = tab[j]; 
+				tab[j] = tab[j+1]; 
+				tab[j+1] = temp; 
+			} 
+		}
+	}
+}
+
+void writeBestScores(){
+	bubbleSort(bestScores, 10);
+	if(bestScores[9] < snakeSize){
+		bestScores[9] = snakeSize;
+		bubbleSort(bestScores, 10);
+	}
+	EEPROM_WriteNBytes(100, bestScores, 10);
+}
+
 void playGame(void);
 
 void lcdCleanBackground(uint16_t color)
@@ -467,8 +498,30 @@ void drawGUI(void)
   
 }
 
+void printScoresBoard(){
+  drawLine(20, 110, 160, 100, LCDCyan);
+  drawString(120, 170, "Wynik", 5, LCDRed);
+	char wynikStr[3] = {" "};
+	sprintf(wynikStr, "%d", snakeSize);
+	drawString(140, 170, wynikStr, 3, LCDRed);
+	
+	for(int i = 0; i < 10; i++){
+		char wynikStr[3] = {" "};
+		char liczba[2] = {" "};
+		sprintf(liczba, "%d", i+1);
+		sprintf(wynikStr, "%d", bestScores[i]);
+		drawString(120, 170-i*18, liczba, 2, LCDBlack);
+		drawString(140, 170-i*18, wynikStr, 2, LCDBlack);
+	}
+
+}
+
 void gameOver(void)
 {
+	if(snakeSize > bestScores[9])
+		writeBestScores();
+	printScoresBoard();
+	snakeSize = 1;
   lcdCleanBackground(LCDWhite);
   drawLine(200, 0, 40, 320, LCDGrey);
   drawString(50, 230, "Gra Snake", 9, LCDBlack);
@@ -502,6 +555,12 @@ short int updatePosition()
 {
 	
   drawCubeFromCenter(xTab[headTail[0][0]], yTab[headTail[0][1]], LCDBlack);
+	int nextTailDirection_index = currentTail+1;
+	if(nextTailDirection_index >= 1000)
+	{
+		nextTailDirection_index = 0;
+	}
+	tailDirection[nextTailDirection_index] = direction;
   switch (direction)
   {
     case 0:
@@ -541,7 +600,7 @@ short int updatePosition()
   {
     drawCubeFromCenter(xTab[headTail[1][0]], yTab[headTail[1][1]], LCDBlueSea);
     coloredTab[32 * headTail[1][1] + headTail[1][0]] = '0';
-    switch (direction)
+    switch (tailDirection[currentTail])
     {
       case 0:
         headTail[1][1] += 1;
@@ -560,6 +619,12 @@ short int updatePosition()
 		coloredTab[32 * headTail[1][1] + headTail[1][0]] = 'T';
 		drawCubeFromCenter(xTab[headTail[0][0]], yTab[headTail[0][1]], LCDRed);
     coloredTab[32 * headTail[0][1] + headTail[0][0]] = 'S';
+		
+		currentTail += 1;
+		if(currentTail >= 1000)
+		{
+			currentTail = 0;
+		}
    
   }
   
@@ -618,6 +683,8 @@ int main(void)
 	lcdConfiguration();
 	init_ILI9325();
 	lcdCleanBackground(LCDWhite);
+
+																			EEPROM_WriteNBytes(100, bestScores, 10); // to trzeba uruchomic tylko raz dla danej plytki
 	
 	/*maxWrite = 3;
 	buforWrite[0] = 0x1D << 1;
@@ -628,6 +695,7 @@ int main(void)
 	
 	//drawGUI();
 	accelerometr_enable();
+	readBestScores(); // funkcja zapisujaca najlepsze wyniki gry do tablicy bestScores
 	char toDraw[50] = {'_'};
 while(1)
 {
