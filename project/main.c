@@ -4,7 +4,6 @@
 #include "Board_Buttons.h"
 #include "Board_Joystick.h"
 #include "GPIO_LPC17xx.h"
-#include "eeprom.h"
 #include "stdio.h"
 //#include "mbed.h"
 
@@ -26,7 +25,8 @@ volatile int maxWrite;
 
 short int side = 10;
 uint8_t snakeSize = 1;
-uint8_t bestScores[10] = {0};
+uint8_t bestScores[20] = {0};
+bestScoresSize 20;
 
 short int xTab[32] = {0};
 short int yTab[20] = {0};
@@ -38,7 +38,7 @@ char coloredTab[640];
   1   2
     3
 */
-short int tailDirection[1000] = {2};
+uint8_t tailDirection[1000] = {2};
 short int direction = 2;
 short int currentTail = 0;
 
@@ -372,15 +372,13 @@ extern void I2C0_IRQHandler(void)
 }
 // strona 466 dokumentacja
 
-void readBestScores(){
-	EEPROM_ReadNBytes(100, bestScores, 10);
-}
+
 
 void bubbleSort(int *tab, int size)
 {
 	for (int i = 0; i < size-1; i++) {
 		for (int j = 0; j < size-i-1; j++) {
-			if (tab[j] > tab[j+1]) { 
+			if (tab[j] < tab[j+1]) { 
 				int temp = tab[j]; 
 				tab[j] = tab[j+1]; 
 				tab[j+1] = temp; 
@@ -389,13 +387,42 @@ void bubbleSort(int *tab, int size)
 	}
 }
 
-void writeBestScores(){
-	bubbleSort(bestScores, 10);
-	if(bestScores[9] < snakeSize){
-		bestScores[9] = snakeSize;
-		bubbleSort(bestScores, 10);
+void readBestScores(){
+	for(int i = 0; i < 20; i++){ 
+		if(i < 4)
+			bestScores[i] = ( LPC_RTC->GPREG0>>(i*8) ) & 0xFF;
+		else if(i < 8)
+			bestScores[i] = ( LPC_RTC->GPREG0>>((i%4)*8) ) & 0xFF;
+		else if(i < 16)
+			bestScores[i] = ( LPC_RTC->GPREG0>>((i%4)*8) ) & 0xFF;
+		else if(i < 24)
+			bestScores[i] = ( LPC_RTC->GPREG0>>((i%4)*8) ) & 0xFF;
+		else if(i < 32)
+			bestScores[i] = ( LPC_RTC->GPREG0>>((i%4)*8) ) & 0xFF;
 	}
-	EEPROM_WriteNBytes(100, bestScores, 10);
+	bubbleSort(bestScores, bestScoresSize);
+}
+
+void writeBestScores(){
+	bubbleSort(bestScores, bestScoresSize);
+	if(bestScores[bestScoresSize-1] < snakeSize){
+		bestScores[bestScoresSize] = snakeSize;
+		bubbleSort(bestScores, bestScoresSize);
+	}
+	LPC_RTC->GPREG0 = LPC_RTC->GPREG1 = LPC_RTC->GPREG2 =LPC_RTC->GPREG3 =LPC_RTC->GPREG4 = 0;
+	for(int i = 0; i < 20; i++){ 
+		if(i < 4)
+			LPC_RTC->GPREG0 |= bestScores[i]<<(i*8);
+		else if(i < 8)
+			LPC_RTC->GPREG1 |= bestScores[i]<<((i%4)*8);
+		else if(i < 16)
+			LPC_RTC->GPREG2 |= bestScores[i]<<((i%4)*8);
+		else if(i < 24)
+			LPC_RTC->GPREG3 |= bestScores[i]<<((i%4)*8);
+		else if(i < 32)
+			LPC_RTC->GPREG4 |= bestScores[i]<<((i%4)*8);
+	}
+
 }
 
 void playGame(void);
@@ -521,7 +548,7 @@ void printScoresBoard(){
 
 void gameOver(void)
 {
-	if(snakeSize > bestScores[9])
+	if(snakeSize > bestScores[bestScoresSize-1])
 		writeBestScores();
 	printScoresBoard();
 	snakeSize = 1;
@@ -678,8 +705,34 @@ void accelerometr_enable()
 	I2C_transmit();
 }
 
+void RTC_IRQHandler(void)
+{
+	// if(isTick)
+	// {
+	// 	isTick = 0;
+	// 	sendString("Tick ", 5);
+	// }
+	// else
+	// {
+	// 	isTick = 1;
+	// 	sendString("Tack ", 5);
+	// }
+	LPC_RTC->ILR = 1;
+
+}
+
+void configureRTC()
+{
+		// wlaczenie RTC jako zrodla przerwania	
+	LPC_RTC->CCR = 1;
+	LPC_RTC->ILR = 1;
+	LPC_RTC->CIIR = 1;
+	NVIC_EnableIRQ(RTC_IRQn);
+}
+
 int main(void)
 {
+	configureRTC();
 	Buttons_Initialize();
 	Joystick_Initialize();
 	SysTick_Config(SystemCoreClock / 1000 / 1000);
@@ -687,7 +740,7 @@ int main(void)
 	init_ILI9325();
 	lcdCleanBackground(LCDWhite);
 
-																			EEPROM_WriteNBytes(100, bestScores, 10); // to trzeba uruchomic tylko raz dla danej plytki
+																			writeBestScores(); // to trzeba uruchomic tylko raz dla danej plytki
 	
 	/*maxWrite = 3;
 	buforWrite[0] = 0x1D << 1;
