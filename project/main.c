@@ -59,61 +59,6 @@ void delayMS(int ms) //miliseconds
 		__WFI(); // uspienie procesora
 }
 
-/*
-
-void lcdCleanBackground(void)
-{
-	lcdWriteReg(ADRX_RAM,0);
-	lcdWriteReg(ADRY_RAM,0);
-	lcdWriteIndex(DATA_RAM);
-	for(int x = 0; x < 240; x++)
-	{
-		for(int y = 0; y < 320; y++)
-		{
-			lcdWriteData(LCDGreen);
-		}
-	}
-}
-
-void drawLine(short int x_, short int y_, short int length, short int thickness)
-{
-	for(int x = x_; x < (x_+length); x++)
-	{
-		for(int y = y_; y < (y_+thickness); y++)
-		{
-			lcdWriteReg(ADRX_RAM,x);
-			lcdWriteReg(ADRY_RAM,y);
-			lcdWriteReg(DATA_RAM,LCDBlack);
-		}
-	}
-}
-
-
-
-void drawLetter(short int offsetX, short int offsetY, unsigned char litera)
-{
-	unsigned char letter[16];
-	GetASCIICode(0, letter, litera);
-	for(int x = 0; x < 8; x++)
-	{
-		for(int y = 0; y < 16; y++)
-		{
-			//GetASCIICode
-			if((letter[y] << x) == 1)
-			{
-				lcdWriteReg(ADRX_RAM,x+offsetX);
-				lcdWriteReg(ADRY_RAM,y+offsetY);
-				lcdWriteReg(DATA_RAM, LCDBlack);
-		
-			}
-		}
-	}
-}
-*/
-
-
-
-
 void I2C_enable()
 {
 	//DOMYSLNE - wlaczenie zegara dla I2C
@@ -142,20 +87,12 @@ void I2C_enable()
 }
 
 /*
-* Jesli chcemy skonfigurowac pojedynczy rejestr to do bufor write wrzucamy kolejno:
+* Jesli chcemy skonfigurowac rejestr to do bufor write wrzucamy kolejno:
 * 1) adres sla + w
 * 2) adres rejestru
 * 3) nowa wartosc rejestru
 * Max read ustawiamy na 0. Max write na 3.
 *
-* Jesli chcemy skonfigurowac kilka rejestr�w zapisujemy do bufor write kolejno:
-* 1) adres sla + w
-* 2) adres rejestru 1
-* 3) nowa wartosc rejestru 1
-* 4) adres rejestru 2
-* 5) nowa wartosc rejestru 2
-* 			...
-* Max read ustawiamy na 0. max write w zaleznosci od ilosci modyfikowanych rejestr�w.
 *
 * Jesli chcemy odczytac rejestr to do bufor write zapisujemy kolejno:
 * 1) adres sla + w
@@ -186,7 +123,7 @@ extern void I2C0_IRQHandler(void)
 
 	switch(status)
 	{
-		//Wyslano pojedynczy sygnal startu i otrzymano ACK. Po tym idziemy do 0x40 lub 0x48
+		//Wyslano pojedynczy sygnal startu i otrzymano ACK. Po tym idziemy do 0x40 lub 0x48(odczyt), 0x18 lub 0x20(zapis)
 		case 0x08:
 			//zapisujemy adres do wyslania - UWAGA! Adres musi posiadac na koncu bit W/R
 			LPC_I2C0->I2DAT = buforWrite[writeId];
@@ -691,18 +628,44 @@ void playGame(void)
 
 }
 
-void accelerometr_enable()
+void accelerometr_enable() //0x3A dla zapisu i 0x3B dla odczytu
 {
-	maxWrite = 8;
-	buforWrite[0] = 0x1D << 1;
-	buforWrite[1] = 0x2A;
-	buforWrite[3] = 0x06;
-	buforWrite[4] = 0x2E;
-	buforWrite[5] = 1<<7 | 1<<6;
-	buforWrite[6] = 0x1D;
-	buforWrite[7] = 0x95;
 	maxRead = 0;
+	maxWrite = 3;
+	buforWrite[0] = 0x1D << 1; //3A adres urządzenia z bitem write/read -> 0
+	buforWrite[1] = 0x24; //0x24 - adres rejestru z progami, których przekroczenie wywoła przerwanie
+	buforWrite[2] = 0x04; //250 mg (wrzucamy liczbę. 62.5 * wrzucona liczba to próg)
 	I2C_transmit();
+	maxRead = 0;
+	maxWrite = 3;
+	buforWrite[0] = 0x1D << 1; //3A adres urządzenia z bitem write/read -> 0
+	buforWrite[1] = 0x27; // adres rejestru w którym sa dane jakie zdarzenia mają powodować przerwanie
+	buforWrite[2] = 0x60; // Włączenie przerwań na płaszczyznach x oraz y
+	I2C_transmit();
+	maxRead = 0;
+	maxWrite = 3;
+	buforWrite[0] = 0x1D << 1; //3Aadres urządzenia z bitem write/read -> 0
+	buforWrite[1] = 0x2E; // adres rejestru w którym uruchamiamy przerwania
+	buforWrite[2] = 0x10; // Włączenie przerwań pojedynczych
+	I2C_transmit();
+}
+
+void accelerometr_read()
+{
+	//Zakładam że przy wielobajtowym odczycie akcelerometr przesyła bajty z kolejno występujących po sobie rejestrach. 
+	//Jeśli nie zadziała to trzeb to rozbić na  osobne transmisje.
+	maxRead = 4;
+	maxWrite = 3;
+	for (int i = 0; i < 4; ++i)
+	{
+		buforRead[i] = 0;
+	}
+	buforWrite[0] = 0x1D << 1; //3A adres urządzenia z bitem write/read -> 0
+	buforWrite[1] = 0x32;	//Adres rejestru za wartością odczytaną X(1 z 2 bajtów)
+	buforWrite[2] = 0x3B; //adres urządzenia (0x1D) z bitem write/read -> 1
+	I2C_transmit();
+	//w bufor read mamy kolejno - mniej znaczący bajt X, bardziej znaczący bajt X,
+	//mniej znaczący bajt Y, bardziej znaczący bajt Y
 }
 
 void RTC_IRQHandler(void)
