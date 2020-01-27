@@ -25,7 +25,7 @@ volatile int maxRead;
 volatile int maxWrite;
 
 short int side = 10;
-uint16_t snakeSize = 1;
+uint16_t snakeSize = 2;
 uint8_t bestScores[20] = {0};
 uint16_t bestScoresSize = 20;
 
@@ -41,8 +41,30 @@ char coloredTab[640];
 */
 uint8_t tailDirection[1000] = {2};
 short int direction = 2;
-short int currentTail = 0;
+short int currentTailWrite = 0;
+short int currentTailRead = 0;
 void I2C_transmit();
+
+void SysTick_Handler(void)
+{
+	++ticks;
+	/*if((ticks % 1000) == 0)
+	{
+		for(int i = 0; i < randomTick%20; i++){
+			randomTick = (int)((double)randomTick * alfaRandom);
+		}
+		if(randomTick > 10000)
+			randomTick = randomTick/(alfaRandom*0.0000002);
+	}*/
+}
+
+void delayMS(int ms) //miliseconds
+{
+	ticks = 0;
+	while(ticks < (ms*1000))
+		__WFI(); // uspienie procesora
+}
+
 void accelerometr_read()
 {
 	//Zakładam że przy wielobajtowym odczycie akcelerometr przesyła bajty z kolejno występujących po sobie rejestrach. 
@@ -104,25 +126,7 @@ void sendIntString(int num)
 }
 
 
-void SysTick_Handler(void)
-{
-	++ticks;
-	/*if((ticks % 1000) == 0)
-	{
-		for(int i = 0; i < randomTick%20; i++){
-			randomTick = (int)((double)randomTick * alfaRandom);
-		}
-		if(randomTick > 10000)
-			randomTick = randomTick/(alfaRandom*0.0000002);
-	}*/
-}
 
-void delayMS(int ms) //miliseconds
-{
-	ticks = 0;
-	while(ticks < (ms*1000))
-		__WFI(); // uspienie procesora
-}
 
 void I2C_enable()
 {
@@ -405,27 +409,40 @@ void bubbleSort(int *tab, int size)
 	}
 }
 
+void bubbleSort8(uint8_t *tab, int size)
+{
+	for (int i = 0; i < size-1; i++) {
+		for (int j = 0; j < size-i-1; j++) {
+			if (tab[j] < tab[j+1]) { 
+				int temp = tab[j]; 
+				tab[j] = tab[j+1]; 
+				tab[j+1] = temp; 
+			} 
+		}
+	}
+}
+
 void readBestScores(){
 	for(int i = 0; i < 20; i++){ 
 		if(i < 4)
 			bestScores[i] = ( LPC_RTC->GPREG0>>(i*8) ) & 0xFF;
 		else if(i < 8)
-			bestScores[i] = ( LPC_RTC->GPREG0>>((i%4)*8) ) & 0xFF;
+			bestScores[i] = ( LPC_RTC->GPREG1>>((i%4)*8) ) & 0xFF;
 		else if(i < 16)
-			bestScores[i] = ( LPC_RTC->GPREG0>>((i%4)*8) ) & 0xFF;
+			bestScores[i] = ( LPC_RTC->GPREG2>>((i%4)*8) ) & 0xFF;
 		else if(i < 24)
-			bestScores[i] = ( LPC_RTC->GPREG0>>((i%4)*8) ) & 0xFF;
+			bestScores[i] = ( LPC_RTC->GPREG3>>((i%4)*8) ) & 0xFF;
 		else if(i < 32)
-			bestScores[i] = ( LPC_RTC->GPREG0>>((i%4)*8) ) & 0xFF;
+			bestScores[i] = ( LPC_RTC->GPREG4>>((i%4)*8) ) & 0xFF;
 	}
-	bubbleSort(bestScores, bestScoresSize);
+	bubbleSort8(bestScores, bestScoresSize);
 }
 
 void writeBestScores(){
-	bubbleSort(bestScores, bestScoresSize);
+	bubbleSort8(bestScores, bestScoresSize);
 	if(bestScores[bestScoresSize-1] < snakeSize){
-		bestScores[bestScoresSize] = snakeSize;
-		bubbleSort(bestScores, bestScoresSize);
+		bestScores[bestScoresSize-1] = snakeSize;
+		bubbleSort8(bestScores, bestScoresSize);
 	}
 	LPC_RTC->GPREG0 = LPC_RTC->GPREG1 = LPC_RTC->GPREG2 =LPC_RTC->GPREG3 =LPC_RTC->GPREG4 = 0;
 	for(int i = 0; i < 20; i++){ 
@@ -546,40 +563,84 @@ void drawGUI(void)
   
 }
 
+void printScore(){
+  drawLine(200, 260, 40, 60, LCDGrey);
+	
+	if(snakeSize < 10){
+		char res[1] = {" "};
+		sprintf(res, "%d", snakeSize);
+		drawString(270, 230, res, 1, LCDRed);
+	}
+	else if(snakeSize < 100){
+		char res[2] = {" "};
+		sprintf(res, "%d", snakeSize);
+		drawString(270, 230, res, 2, LCDRed);		
+	}
+	else{
+		char res[3] = {" "};
+		sprintf(res, "%d", snakeSize);
+		drawString(270, 230, res, 3, LCDRed);
+	}
+	
+}
+
+
 void printScoresBoard(){
-  drawLine(20, 110, 160, 100, LCDCyan);
-  drawString(120, 170, "Wynik", 5, LCDRed);
-	char wynikStr[3] = {" "};
-	sprintf(wynikStr, "%d", snakeSize);
-	drawString(140, 170, wynikStr, 3, LCDRed);
+  drawLine(10, 110, 180, 100, LCDCyan);
+  drawString(20, 100, "Wyniki", 6, LCDRed);
+	printScore();
 	
 	for(int i = 0; i < 10; i++){
-		char wynikStr[3] = {" "};
-		char liczba[2] = {" "};
-		sprintf(liczba, "%d", i+1);
-		sprintf(wynikStr, "%d", bestScores[i]);
-		drawString(120, 170-i*18, liczba, 2, LCDBlack);
-		drawString(140, 170-i*18, wynikStr, 2, LCDBlack);
-	}
-	while(Joystick_GetState() != JOYSTICK_CENTER){
+		if(i < 9){
+			char liczba[1] = {" "};
+			sprintf(liczba, "%d", i+1);
+			drawString(120, 190-i*18, liczba, 1, LCDRed);
+		}
+		else{
+			char liczba[2] = {" "};
+			sprintf(liczba, "%d", i+1);
+			drawString(120, 190-i*18, liczba, 2, LCDRed);			
+		}
+		if(bestScores[i] < 10){
+			char wynikStr[1] = {" "};
+			sprintf(wynikStr, "%d", bestScores[i]);
+			drawString(150, 190-i*18, wynikStr, 1, LCDBlack);
+		}
+		else if(bestScores[i] < 100){
+			char wynikStr[2] = {" "};
+			sprintf(wynikStr, "%d", bestScores[i]);
+			drawString(150, 190-i*18, wynikStr, 2, LCDBlack);
+		}
+		else{
+			char wynikStr[3] = {" "};
+			sprintf(wynikStr, "%d", bestScores[i]);
+			drawString(150, 190-i*18, wynikStr, 3, LCDBlack);
+		}
 	}
 
 }
 
+
 void gameOver(void)
 {
-	if(snakeSize > bestScores[bestScoresSize-1])
-		writeBestScores();
-	printScoresBoard();
-	snakeSize = 1;
+	
   lcdCleanBackground(LCDWhite);
   drawLine(200, 0, 40, 320, LCDGrey);
   drawString(50, 230, "Gra Snake", 9, LCDBlack);
 
-  drawString(50, 150, "Przegrana", 9, LCDRed);
+  drawString(160, 230, "Przegrana", 9, LCDRed);
+	if(snakeSize > bestScores[bestScoresSize-1])
+		writeBestScores();
+	printScoresBoard();
+	printScore();
+	snakeSize = 2;
+	currentTailWrite = 0;
+	currentTailRead = 0;
+	for(int i = 0; i < 1000; i++)
+		tailDirection[i] = 2;
 
-
-  delayMS(3000);
+	while(Joystick_GetState() != JOYSTICK_CENTER){
+	}
   //drawGUI();  
 }
 
@@ -587,6 +648,7 @@ void gameOver(void)
 void generateFood()
 {
   short int generated = 0;
+	short int liczbaProb = 0;
   while(generated == 0)
   {
     int indexX = ((float)randomTick/10000.0)*32.;
@@ -594,12 +656,31 @@ void generateFood()
 		/*sendIntString(indexX);
 		sendIntString(indexY);
 		sendIntString(randomTick);*/
+		if(liczbaProb == 7){
+			for(int i = 0; i < 32; i++)
+			{
+				for(int j = 0; j < 20; j++)
+				{
+					if((coloredTab[32*j+i] != 'S') && (coloredTab[32*j+i] != 'T') && (coloredTab[32*j+i] != 'F'))
+					{
+						coloredTab[32*indexY+indexX] = 'F';
+						drawCubeFromCenter(xTab[indexX], yTab[indexY], LCDGreen);
+						generated = 1;
+						break;
+					}
+				}
+			}
+		}
     if((coloredTab[32*indexY+indexX] != 'S') && (coloredTab[32*indexY+indexX] != 'T') && (coloredTab[32*indexY+indexX] != 'F'))
     {
       coloredTab[32*indexY+indexX] = 'F';
       drawCubeFromCenter(xTab[indexX], yTab[indexY], LCDGreen);
       generated = 1;
+			break;
     }
+		liczbaProb++;
+		delayMS(30);
+		
   }
 }
 
@@ -607,17 +688,17 @@ short int updatePosition()
 {
 	
   drawCubeFromCenter(xTab[headTail[0][0]], yTab[headTail[0][1]], LCDBlack);
-	int nextTailDirection_index = currentTail+1;
-	if(nextTailDirection_index >= 1000)
+	currentTailWrite += 1;
+	if(currentTailWrite >= 1000)
 	{
-		nextTailDirection_index = 0;
+		currentTailWrite = 0;
 	}
-	tailDirection[nextTailDirection_index] = direction;
+	tailDirection[currentTailWrite] = direction;
   switch (direction)
   {
     case 0:
       headTail[0][1] += 1;
-        if(headTail[0][1] > 20)
+        if(headTail[0][1] >= 20)
           return 0;
     break;
     case 1:
@@ -627,7 +708,7 @@ short int updatePosition()
       break;
     case 2:
         headTail[0][0] += 1;
-        if(headTail[0][0] > 32)
+        if(headTail[0][0] >= 32)
           return 0;
       break;
     case 3:
@@ -644,15 +725,17 @@ short int updatePosition()
   else if(headChar == 'F') // zdobycie punktu
   {
     snakeSize++;
+		printScore();
     coloredTab[32 * headTail[0][1] + headTail[0][0]] = 'S';
     drawCubeFromCenter(xTab[headTail[0][0]], yTab[headTail[0][1]], LCDRed);
     generateFood();
   }
   else
-  {
+	{
+		
     drawCubeFromCenter(xTab[headTail[1][0]], yTab[headTail[1][1]], LCDWhite);
     coloredTab[32 * headTail[1][1] + headTail[1][0]] = '0';
-    switch (tailDirection[currentTail])
+    switch (tailDirection[currentTailRead])
     {
       case 0:
         headTail[1][1] += 1;
@@ -672,28 +755,52 @@ short int updatePosition()
 		drawCubeFromCenter(xTab[headTail[0][0]], yTab[headTail[0][1]], LCDRed);
     coloredTab[32 * headTail[0][1] + headTail[0][0]] = 'S';
 		
-		currentTail += 1;
-		if(currentTail >= 1000)
+		currentTailRead += 1;
+		if(currentTailRead >= 1000)
 		{
-			currentTail = 0;
+			currentTailRead = 0;
 		}
    
   }
   
-
   return 1;
 }
 
 void updateDirection(void)
 {
-  accelerometr_read();
-	sendIntString(buforRead[0] + buforRead[1]);
-	sendString("  ",2);
-	sendIntString(buforRead[2] + buforRead[3]);
-	sendString("\n",2);
-	delayMS(5);
-	int left = 0;
-  if(Joystick_GetState() == JOYSTICK_UP)
+	long value = 0;
+	for(int i = 0; i < 5; i++){
+		accelerometr_read();
+		value += buforRead[2] + (buforRead[3]<<8);
+		delayMS(50);
+	}
+	value /= 5;
+	if(value > 60000){
+		sendString("prawo",5);
+		switch(direction){
+			case 0: direction = 2; break;
+			case 1: direction = 0; break;
+			case 2: direction = 3; break;
+			case 3: direction = 1; break;
+			default: break;
+		}
+	}
+	else if(value > 200 && value < 2000){
+		sendString("lewo", 4);
+		switch(direction){
+			case 0: direction = 1; break;
+			case 1: direction = 3; break;
+			case 2: direction = 0; break;
+			case 3: direction = 2; break;
+			default: break;
+		}
+	}
+	else{
+		sendString("srodek", 6);
+		return;
+	}
+
+	if(Joystick_GetState() == JOYSTICK_UP)
     direction = 0;
   if(Joystick_GetState() == JOYSTICK_LEFT)
     direction = 1;
@@ -701,14 +808,16 @@ void updateDirection(void)
     direction = 2;
   if(Joystick_GetState() == JOYSTICK_DOWN)
     direction = 3;
+
 }
 
 void playGame(void)
 {
 	
-  drawString(200, 230, "Start", 5, LCDBlack);
+  drawString(200, 230, "Wynik", 5, LCDBlack);
   short int running  = 1;
 	generateFood();
+	printScore();
   while(running == 1)
   {
     updateDirection();
@@ -726,7 +835,7 @@ void accelerometr_enable() //0x3A dla zapisu i 0x3B dla odczytu
 	maxWrite = 3;
 	buforWrite[0] = 0x3A; //3A adres urządzenia z bitem write/read -> 0
 	buforWrite[1] = 0x24; //0x24 - adres rejestru z progami, których przekroczenie wywoła przerwanie
-	buforWrite[2] = 0x04; //250 mg (wrzucamy liczbę. 62.5 * wrzucona liczba to próg)
+	buforWrite[2] = 0x10; //250 mg (wrzucamy liczbę. 62.5 * wrzucona liczba to próg)
 	I2C_transmit();
 	delayMS(10);
 	
@@ -794,28 +903,32 @@ int main(void)
 	init_ILI9325();
 	lcdCleanBackground(LCDWhite);
 
-	writeBestScores(); // to trzeba uruchomic tylko raz dla danej plytki
-	
-	/*maxWrite = 3;
-	buforWrite[0] = 0x1D << 1;
-	buforWrite[1] = 0x32;
-	buforWrite[2] = (0x1D << 1) | 1;
-	maxRead = 1;
-	I2C_transmit();*/
-	
-	//drawGUI();
+	short int ifWrite = -1;
+	drawString(10, 200, "Czy zresetowac tablice wynikow?", 31, LCDBlack); 
+	drawString(50, 150, "Tak - JOY_LEFT", 14, LCDGreen); 
+	drawString(50, 100, "Nie - JOY_RIGHT", 15, LCDRed);
+	while(ifWrite == -1){
+		if(Joystick_GetState() == JOYSTICK_LEFT)
+		{
+			writeBestScores(); // to trzeba uruchomic tylko raz dla danej plytki
+			ifWrite = 1;
+		}
+		else if(Joystick_GetState() == JOYSTICK_RIGHT){
+			ifWrite = 0;
+		}
+	}
 	accelerometr_enable();
 	readBestScores(); // funkcja zapisujaca najlepsze wyniki gry do tablicy bestScores
-	char toDraw[50] = {'_'};
-	if(debug == 1) sendString("\n", 2);
+	
+	lcdCleanBackground(LCDWhite);
+	drawString(10, 150, "Przycisk JOY_CENTER startuje", 28, LCDBlack);
+	drawString(10, 140, "gre", 3, LCDBlack);
 while(1)
 {
-	lcdCleanBackground(LCDWhite);
-	for(int i = 0; i < 50; i++)
-		toDraw[i] = '_';
 	
 	if(Joystick_GetState() == JOYSTICK_CENTER)
   {
+		lcdCleanBackground(LCDWhite);
 		drawGUI();
     playGame();
   }
@@ -830,6 +943,10 @@ while(1)
 		sendString("\n",2);
 	delayMS(100);*/
 
+	//sendString(" ",1);
+	//sendIntString(buforRead[2] + (buforRead[3]<<8));
+	//sendString("   ",3);
+	//delayMS(50);
 	
 }
 

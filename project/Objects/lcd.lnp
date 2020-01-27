@@ -4,6 +4,8 @@
 ".\objects\lcd_ili9325.o"
 ".\objects\asciilib.o"
 ".\objects\led_open1768.o"
+".\objects\buttons_open1768.o"
+".\objects\joystick_open1768.o"
 ".\objects\gpio_lpc17xx.o"
 ".\objects\pin_lpc17xx.o"
 ".\objects\startup_lpc17xx.o"
